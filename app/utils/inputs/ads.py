@@ -16,10 +16,11 @@ def prepare_data(data):
         data = data.copy()
         data.reset_index(drop=True, inplace=True)  # Reset index to ensure it's numeric
         data['time_index'] = (data['ds'] - data['ds'].min()).dt.days  # Create a numeric time index
-        return data
+        return data, None
     except Exception as e:
-        logger.error(f"Failed to prepare data: {e}")
-        return None  # Optionally, return None to indicate failure
+        error_message = f"Failed to prepare data: {e}"
+        logger.error(error_message)
+        return None, error_message
     
 
 def chow_test(data1: pd.DataFrame, data2: pd.DataFrame, alpha: float = 0.05) -> bool:
@@ -27,12 +28,15 @@ def chow_test(data1: pd.DataFrame, data2: pd.DataFrame, alpha: float = 0.05) -> 
     Performs Chow Test to check if the coefficients in two linear regressions on different data sets are equal.
     """
     try:
+        if data1.empty or data2.empty:
+            raise ValueError("One of the input datasets is empty.")
+        
         X1 = sm.add_constant(data1['time_index'])
-        X2 = sm.add_constant(data2['time_index'])
         y1 = data1['y']
-        y2 = data2['y']
-
         model1 = sm.OLS(y1, X1).fit()
+
+        X2 = sm.add_constant(data2['time_index'])
+        y2 = data2['y']
         model2 = sm.OLS(y2, X2).fit()
 
         X_pooled = sm.add_constant(pd.concat([data1['time_index'], data2['time_index']]))
@@ -40,56 +44,63 @@ def chow_test(data1: pd.DataFrame, data2: pd.DataFrame, alpha: float = 0.05) -> 
         model_pooled = sm.OLS(y_pooled, X_pooled).fit()
 
         N = len(y_pooled)
-        k = 2 # X1.shape[1]
+        k = X_pooled.shape[1]  # Correct number of regressors including constant
         SSR1 = model1.ssr
         SSR2 = model2.ssr
         SSR_pooled = model_pooled.ssr
         F = ((SSR_pooled - (SSR1 + SSR2)) / k) / ((SSR1 + SSR2) / (N - 2 * k))
         p_value = f.sf(F, k, N - 2 * k)
 
-        return p_value > alpha
+        return p_value > alpha, None
     except Exception as e:
         error_message = f"Error in Chow Test: {e}"
         logger.error(error_message)
         return None, error_message
     
 
-def find_optimal_window(data: pd.DataFrame, periods: list = [1, 3, 6, 9, 12], alpha: float = 0.05) -> int:
+def find_optimal_window(data: pd.DataFrame, periods: list = [1, 3, 6, 9, 12], alpha: float = 0.05):
     """
     Finds the optimal time period for data based on Chow Test.
+    Propagates errors by returning them with the result.
     """
     try:
-        data = prepare_data(data)
-        if data is None:
-            raise ValueError("Data preparation failed.")
+        data, error_message = prepare_data(data)
+        if error_message:
+            return None, error_message  # Return error early if data preparation fails
 
         def test_period(months):
-            try:
-                window_size = months * 30  # Assume 30 days per month
-                max_window_size = 0  # To keep track of the maximum valid window size
+            window_size = months * 30  # Assume 30 days per month
+            max_window_size = 0  # To track the maximum valid window size
 
-                for start in range(0, len(data), window_size):  # Increment start by window size each loop
-                    end = start + window_size
-                    if end > len(data):  # Check if end exceeds the data length
-                        end = len(data)  # Adjust end to the length of the data
+            for start in range(0, len(data) - window_size, window_size):
+                end = start + window_size
+                next_end = min(end + window_size, len(data))
 
-                    current_window_size = end - start
-                    if current_window_size > max_window_size and chow_test(data.iloc[start:end], data.iloc[end:min(end + window_size, len(data))], alpha):
-                        max_window_size = current_window_size
+                if next_end <= end:  # Ensure there is data for the second window
+                    continue  # Skip this iteration as the second window would be empty
 
-                return max_window_size
-            except Exception as e:
-                error_message = f"Error testing period of {months} months: {e}"
-                logger.error(error_message)
-                return None, error_message
+                test_result, error_message = chow_test(data.iloc[start:end], data.iloc[end:next_end], alpha)
+                if error_message:
+                    return None, error_message  # Return error immediately
+
+                current_window_size = end - start
+                if current_window_size > max_window_size and test_result:
+                    max_window_size = current_window_size
+
+            return max_window_size, None
+
 
         with ThreadPoolExecutor() as executor:
             results = list(executor.map(test_period, periods))
 
-        return max(results), None
+        # Find and return the maximum window size; handle case where all results are None
+        valid_results = [res for res, err in results if err is None]
+        if not valid_results:
+            return None, "All period tests failed. Check the individual errors."
+        
+        return max(valid_results), None
     except Exception as e:
         error_message = f"Error finding optimal window: {e}"
-        logger.error(error_message)
         return None, error_message
     
     
