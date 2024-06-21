@@ -16,11 +16,11 @@ def prepare_data(data):
         data = data.copy()
         data.reset_index(drop=True, inplace=True)  # Reset index to ensure it's numeric
         data['time_index'] = (data['ds'] - data['ds'].min()).dt.days  # Create a numeric time index
-        return data, None
+        return data
     except Exception as e:
         error_message = f"Failed to prepare data: {e}"
         logger.error(error_message)
-        return None, error_message
+        raise Exception(error_message)
     
 
 def chow_test(data1: pd.DataFrame, data2: pd.DataFrame, alpha: float = 0.05) -> bool:
@@ -51,11 +51,11 @@ def chow_test(data1: pd.DataFrame, data2: pd.DataFrame, alpha: float = 0.05) -> 
         F = ((SSR_pooled - (SSR1 + SSR2)) / k) / ((SSR1 + SSR2) / (N - 2 * k))
         p_value = f.sf(F, k, N - 2 * k)
 
-        return p_value > alpha, None
+        return p_value > alpha
     except Exception as e:
         error_message = f"Error in Chow Test: {e}"
         logger.error(error_message)
-        return None, error_message
+        raise Exception(error_message)
     
 
 def find_optimal_window(data: pd.DataFrame, periods: list = [1, 3, 6, 9, 12], alpha: float = 0.05):
@@ -64,9 +64,7 @@ def find_optimal_window(data: pd.DataFrame, periods: list = [1, 3, 6, 9, 12], al
     Propagates errors by returning them with the result.
     """
     try:
-        data, error_message = prepare_data(data)
-        if error_message:
-            return None, error_message  # Return error early if data preparation fails
+        data = prepare_data(data)
 
         def test_period(months):
             window_size = months * 30  # Assume 30 days per month
@@ -79,29 +77,23 @@ def find_optimal_window(data: pd.DataFrame, periods: list = [1, 3, 6, 9, 12], al
                 if next_end <= end:  # Ensure there is data for the second window
                     continue  # Skip this iteration as the second window would be empty
 
-                test_result, error_message = chow_test(data.iloc[start:end], data.iloc[end:next_end], alpha)
-                if error_message:
-                    return None, error_message  # Return error immediately
+                test_result = chow_test(data.iloc[start:end], data.iloc[end:next_end], alpha)
 
                 current_window_size = end - start
                 if current_window_size > max_window_size and test_result:
                     max_window_size = current_window_size
 
-            return max_window_size, None
+            return max_window_size
 
 
         with ThreadPoolExecutor() as executor:
             results = list(executor.map(test_period, periods))
 
-        # Find and return the maximum window size; handle case where all results are None
-        valid_results = [res for res, err in results if err is None]
-        if not valid_results:
-            return None, "All period tests failed. Check the individual errors."
-        
-        return max(valid_results), None
+        return max(results)
     except Exception as e:
         error_message = f"Error finding optimal window: {e}"
-        return None, error_message
+        logger.error(error_message)
+        raise Exception(error_message)
     
     
 __all__ = ['find_optimal_window']
