@@ -154,13 +154,13 @@ def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, ru
     return best_dict, search_results, forecaster
 
 
-def generate_forecast_skforecast(best_model, run_params, y, forecast_df, forecast_start_date):
+def generate_forecast_skforecast(best_model, run_params, y, forecast_df, forecast_start_date, forecast_period):
     """
     Generates a forecast DataFrame with prediction intervals.
     """
 
     # Predict intervals
-    df_forecast = best_model.predict_interval(last_window=y, steps=len(forecast_df),
+    df_forecast = best_model.predict_interval(last_window=y, steps=forecast_period,
                                               exog=forecast_df[run_params["exog_cols_all"]],
                                               interval=[5, 95], n_boot=50)
     df_forecast.reset_index(inplace=True)
