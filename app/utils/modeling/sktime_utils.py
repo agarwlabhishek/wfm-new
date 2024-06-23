@@ -1,3 +1,6 @@
+import numpy as np
+import pandas as pd
+from typing import Dict, Tuple, Optional, Union
 from sktime.forecasting.model_selection import ExpandingWindowSplitter, ForecastingGridSearchCV
 from sktime.performance_metrics.forecasting import mean_squared_percentage_error, mean_absolute_percentage_error
 from sktime.forecasting.naive import NaiveForecaster
@@ -46,3 +49,27 @@ def find_best_model_sktime(y, run_params, model, param_grid):
 
     # Return the best parameters, CV results, and the best forecaster
     return best_dict, gscv.cv_results_, gscv.best_forecaster_
+
+
+def generate_forecast_sktime(best_model, forecast_period):
+    """
+    Generates a DataFrame containing forecast predictions, prediction intervals, and a date range.
+    """
+    # Create forecast horizon and date range simultaneously
+    forecast_horizon = np.arange(1, forecast_period+1)
+    
+    # Generate predictions
+    forecast_pred = best_model.predict(fh=forecast_horizon).reset_index(drop=False)
+    forecast_pred.columns = ["ds", "y_pred"]
+
+    # Generate prediction intervals
+    forecast_pred_int = best_model.predict_interval(fh=forecast_horizon).reset_index(drop=False)
+    forecast_pred_int.columns = ["ds", "min_pred", "max_pred"]
+
+    # Combine predictions and intervals, add the date range
+    forecast_results = forecast_pred.merge(forecast_pred_int, on="ds")
+    
+    # Ensure the lengths are equal
+    assert len(forecast_results) == forecast_period, "Error: Length mismatch!"
+    
+    return forecast_results

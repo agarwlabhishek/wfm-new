@@ -16,6 +16,9 @@ from sktime.performance_metrics.forecasting import (
 from typing import Optional, Tuple, List, Dict, Any, Callable, Union
 
 
+from utils.modeling.general import *
+
+
 def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, run_params):
     """
     Perform a grid search to optimize model parameters over different lag windows and return the best model configuration.
@@ -34,8 +37,10 @@ def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, ru
         """
         Custom MAPE calculation considering country holidays.
         """
-        if run_params["country_name"]:
-            y_true, y_pred = _filter_holidays(y_true, y_pred)
+        
+        # if run_params["country_name"]:
+        #    y_true, y_pred = _filter_holidays(y_true, y_pred)
+            
         return mean_absolute_percentage_error(y_true, y_pred)
 
 
@@ -43,8 +48,9 @@ def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, ru
         """
         Custom MSPE calculation considering country holidays.
         """
-        if run_params["country_name"]:
-            y_true, y_pred = _filter_holidays(y_true, y_pred)
+        # if run_params["country_name"]:
+        #    y_true, y_pred = _filter_holidays(y_true, y_pred)
+        
         return mean_squared_percentage_error(y_true, y_pred)
 
 
@@ -91,7 +97,7 @@ def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, ru
         return weights
 
 
-    def _grid_search_forecaster(model: BaseEstimator, y: pd.Series, exog_cols: pd.DataFrame, 
+    def _grid_search_forecaster(model: BaseEstimator, y: pd.Series, exog_data: pd.DataFrame, 
                                 param_grid: Dict, lag_window: int) -> pd.DataFrame:
         """
         Create a forecaster and perform a grid search to find the best model.
@@ -104,7 +110,7 @@ def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, ru
 
         return grid_search_forecaster(forecaster=forecaster,
                                       y=y,
-                                      exog=exog_cols,
+                                      exog=exog_data,
                                       param_grid=param_grid,
                                       steps=run_params["test_steps"],
                                       fixed_train_size=False,
@@ -146,3 +152,39 @@ def find_best_model_skforecast(lag_window_range, model, train_df, param_grid, ru
                                          weight_func=_custom_weights)
 
     return best_dict, search_results, forecaster
+
+
+def generate_forecast_skforecast(best_model, run_params, y, forecast_df, forecast_start_date, forecast_period):
+    """
+    Generates a forecast DataFrame with prediction intervals.
+    """
+    # Create forecast horizon and date range simultaneously
+    forecast_horizon = np.arange(0, forecast_period)
+    forecast_dates = pd.date_range(forecast_start_date, periods=forecast_period,
+                                   freq=run_params["forecast_freq"])
+
+    # Initialize forecast DataFrame with the date range
+    forecast_results = pd.DataFrame(forecast_dates, columns=['ds'])
+
+    # Generate date features for the forecast
+    forecast_results = generate_date_features(forecast_results, run_params["forecast_freq"],
+                                              run_params["country_name"])
+
+    if run_params["external_features"]:
+        forecast_results = forecast_results.merge(forecast_df, on='ds', how='left')
+
+    forecast_results.set_index('ds', inplace=True)
+    forecast_results = forecast_results.asfreq(run_params["forecast_freq"])
+
+    # Predict intervals
+    df_forecast = best_model.predict_interval(last_window=y, steps=len(forecast_results),
+                                              exog=forecast_results[run_params["exog_cols_all"]],
+                                              interval=[5, 95], n_boot=50)
+    df_forecast.reset_index(inplace=True)
+    df_forecast.rename(columns={"index": "ds", "pred": "y_pred", "lower_bound": "min_pred", "upper_bound": "max_pred"},
+                       inplace=True)
+    
+    # Ensure the lengths are equal
+    assert len(df_forecast) == forecast_period, "Error: Length mismatch!"
+    
+    return df_forecast
