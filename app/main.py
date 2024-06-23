@@ -222,7 +222,8 @@ if st.session_state.input_submitted:
 
         # Find the min data for optimal train data
         run_params["optimal_window_size"] = optimal_window_size
-        run_params["optimal_window_start_date"] = optimal_df['ds'].min()
+        run_params["optimal_start_date"] = optimal_df['ds'].min()
+        run_params["optimal_end_date"] = optimal_df['ds'].max()
         
         st.success(f"Automatic Data Selection: Historical data has been truncated to **{optimal_window_size}** most recent days!")
         
@@ -280,7 +281,6 @@ if st.session_state.input_submitted:
         })
         
         
-        
         try:
             test_df = optimal_df[-test_size:].copy(deep=True)
             test_df = test_df.set_index('ds').resample(run_params["forecast_freq"]).sum()
@@ -305,6 +305,15 @@ if st.session_state.input_submitted:
             forecast_df = forecast_df.fillna(0)
         except Exception as e:
             raise ValueError(f"Failed to split into train and test: {e}")
+            
+            
+        dates_df = pd.DataFrame({
+            'Type': ['Uploaded Period', 'Optimal Period', 'Forecast Period'],
+            'From': [run_params["historical_start_date"].strftime('%d-%m-%Y'), run_params["optimal_start_date"].strftime('%d-%m-%Y'), run_params["forecast_start_date"].strftime('%d-%m-%Y')],
+            'To': [run_params["historical_end_date"].strftime('%d-%m-%Y'), run_params["optimal_end_date"].strftime('%d-%m-%Y'), run_params["forecast_end_date"].strftime('%d-%m-%Y')]
+        })
+
+        modelling_tab.dataframe(dates_df)
          
         #####################################################################################
             
