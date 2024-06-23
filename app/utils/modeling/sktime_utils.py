@@ -63,7 +63,7 @@ def generate_forecast_sktime(best_model, forecast_period):
     forecast_pred.columns = ["ds", "y_pred"]
 
     # Generate prediction intervals
-    forecast_pred_int = best_model.predict_interval(fh=forecast_horizon).reset_index(drop=False)
+    forecast_pred_int = best_model.predict_interval(fh=forecast_horizon, coverage=0.95).reset_index(drop=False)
     forecast_pred_int.columns = ["ds", "min_pred", "max_pred"]
 
     # Combine predictions and intervals, add the date range

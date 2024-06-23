@@ -15,7 +15,7 @@ def convert_data_types(data: pd.DataFrame) -> (bool, str):
     Returns a boolean indicating success and an optional error message on failure.
     """
     try:
-        data["ds"] = pd.to_datetime(data["ds"], errors="coerce")
+        data["ds"] = pd.to_datetime(data["ds"], dayfirst=True)
         data["y"] = pd.to_numeric(data["y"], errors="coerce")
     except Exception as e:
         error_message = f"Incorrect datatype. Please ensure the date and volume columns have the correct data types: {e}"
@@ -41,30 +41,22 @@ def validate_input_file(uploaded_file, external_features: bool = False) -> (Opti
     and data types. Returns a DataFrame and an optional error message.
     """
     try:
-        data = pd.read_csv(uploaded_file, parse_dates=[0])
+        data = pd.read_csv(uploaded_file)
     except Exception as e:
         error_message = f"Error reading the CSV file: {e}"
         logger.error(error_message)
         raise Exception(error_message)
 
-    if not np.issubdtype(data.iloc[:, 0].dtype, np.datetime64) or not np.issubdtype(data.iloc[:, 1].dtype, np.number):
-        error_message = "The first column should be of date type and the second column should be numeric."
-        logger.error(error_message)
-        raise Exception(error_message)
-
     data.rename(columns={data.columns[0]: "ds", data.columns[1]: "y"}, inplace=True)
-
+    
     if not external_features:
         data = data[["ds", "y"]]
 
     success = convert_data_types(data)
 
-    if any(data['y'] < 0):
-        error_message = "All volume values should be non-negative."
-        logger.error(error_message)
-        raise Exception(error_message)
+    data["y"] = data["y"].fillna(0)
 
-    return data
+    return data.sort_values(by="ds")
 
 
-__all__ = ['validate_input_file']
+__all__ = ["validate_input_file"]

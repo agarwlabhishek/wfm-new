@@ -1,6 +1,7 @@
 import os
 import yaml
 
+import numpy as np
 import pandas as pd
 import warnings
 import holidays
@@ -10,6 +11,13 @@ from xgboost import XGBRegressor
 from sktime.forecasting.fbprophet import Prophet
 from sktime.forecasting.naive import NaiveForecaster
 
+from sktime.performance_metrics.forecasting import (
+    mean_absolute_percentage_error,
+    mean_squared_percentage_error,
+    mean_absolute_scaled_error,
+    mean_squared_scaled_error
+)
+
 
 def resample_dataframe(df, forecast_freq='D'):
     """
@@ -18,7 +26,7 @@ def resample_dataframe(df, forecast_freq='D'):
     
     df['ds'] = pd.to_datetime(df['ds'])
     df.set_index('ds', inplace=True)
-    df = df.resample(forecast_freq).mean()
+    df = df.resample(forecast_freq).sum()
     
     return df.reset_index()
 
@@ -32,8 +40,8 @@ def determine_params(forecast_freq):
     freq_settings = {
         "D": (90, [7, 15, 30, 60, 90], [3, 7, 15, 30, 60, 90], 30, 3),
         "B": (60, [5, 10, 20, 40, 60], [3, 5, 10, 20, 40, 60], 20, 2),
-        "W": (12, [4, 8, 12], [4, 8, 12, 16, 20, 24], 6, 1),
-        "M": (3, [3], [3, 6, 9, 12], 3, 1)
+        "W": (12, [2, 4, 6, 8, 12], [2, 4, 6, 8, 12], 6, 1),
+        "M": (3, [1, 2, 3], [1, 2, 3], 3, 1)
     }
     
     try:
@@ -132,3 +140,41 @@ def load_model_params_and_create_instance(model_type, current_dir):
         raise Exception(f"Error parsing the YAML file: {e}")
 
     return model_class, param_grid
+
+
+def compute_metrics(df_predictions: pd.DataFrame, y_hist = None) -> dict:
+    """
+    Compute different metrics for the predictions.
+    """
+    
+    # Drop NA values from DataFrame
+    df_predictions = df_predictions.dropna()
+    
+    # Compute MAPE and RMSPE
+    mape = mean_absolute_percentage_error(df_predictions["y"], df_predictions["y_pred"])
+    rmspe = mean_squared_percentage_error(df_predictions["y"], df_predictions["y_pred"], square_root=True)
+    
+    # Calculate coverage
+    coverage = np.where(
+                    (df_predictions.loc[df_predictions.index, 'y'] >= df_predictions['min_pred']) &
+                    (df_predictions.loc[df_predictions.index, 'y'] <= df_predictions['max_pred']),
+                    True,
+                    False
+                ).mean()
+    
+    if y_hist is None:
+        mase = None
+        rmsse = None
+    else:
+        mase = mean_absolute_scaled_error(df_predictions["y"], df_predictions["y_pred"], y_train=y_hist)
+        rmsse = mean_squared_scaled_error(df_predictions["y"], df_predictions["y_pred"], y_train=y_hist, square_root=True)
+        
+    metrics = {
+        "MAPE": mape,
+        "RMSPE": rmspe,
+        "MASE": mase,
+        "RMSSE": rmsse,
+        "Coverage": coverage
+    }
+    
+    return metrics
