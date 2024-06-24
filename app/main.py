@@ -17,14 +17,15 @@ import zipfile
 import plotly.graph_objects as go
 from sklearn.metrics import mean_squared_error
 
-from utils.general import *
+from utils.download import *
 from utils.manager.login import *
-from utils.inputs.validation import *
-from utils.inputs.ads import *
+from utils.preprocess.general import *
+from utils.preprocess.validation import *
+from utils.preprocess.ads import *
 from utils.modeling.general import *
 from utils.modeling.skforecast_utils import *
 from utils.modeling.sktime_utils import *
-from utils.modeling.plot import *
+from utils.analysis.plot import *
 
 # Set up the logging configuration for cmdstanpy
 logger = logging.getLogger()
