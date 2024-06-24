@@ -60,20 +60,22 @@ col_2.caption("")
 col_2.write("v2.0.0")
 st.sidebar.write("""The tool leverages advanced statistical & machine learning models to deliver automated, precise predictions for optimizing operational efficiency.""")
 
-# Set logged in flag as False
 if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
+        st.session_state.logged_in = False
+
+if not st.session_state.logged_in:
+    # Checking the login status
+    try:
+        login_page()
+    except Exception as e:
+        logger.error(f"Error in checking login status: {e}")
+        raise e
+    else:
+        logging.info("Login successful!")
+
+
 if 'input_submitted' not in st.session_state:
     st.session_state.input_submitted = False
-
-# Checking the login status
-try:
-    if not st.session_state.logged_in:
-        login_page()
-
-except Exception as e:
-    st.error(f"Error in checking login status: {e}")
-    st.stop()
 
 if st.session_state.logged_in:
     # Retrieve input from the sidebar
