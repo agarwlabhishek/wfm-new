@@ -95,8 +95,8 @@ if st.session_state.logged_in:
         # uploaded_historical_file = st.file_uploader("Historical Data (.csv) :arrow_up: **(MANDATORY)**", type=["csv"])
         # uploaded_forecast_file = st.file_uploader("Forecast Data (.csv) :arrow_up: **(OPTIONAL)**", type=["csv"])
         
-        uploaded_historical_file = "Agency Services_multi.csv"
-        uploaded_forecast_file = "Agency Services_multi_forecast.csv"
+        uploaded_historical_file = "Agency Services.csv"
+        uploaded_forecast_file = None
 
         submitted = st.form_submit_button("Submit")
 
@@ -170,7 +170,7 @@ if st.session_state.input_submitted:
             run_params["historical_start_date"] = historical_df['ds'].min()
             run_params["historical_end_date"] = historical_df['ds'].max()
             run_params["forecast_start_date"] = historical_df['ds'].max() + pd.Timedelta(days=1)
-            run_params["forecast_end_date"] = historical_df['ds'].max() + pd.Timedelta(days=run_params["forecast_period"])
+            run_params["forecast_end_date"] = calculate_end_date(run_params)
 
         except Exception as e:
             # Log this exception or handle it further up the call stack
@@ -229,6 +229,11 @@ if st.session_state.input_submitted:
         
         #####################################################################################
         
+        if not run_params["external_features"]:
+            date_range = pd.date_range(start=run_params['forecast_start_date'],
+                                                       end=run_params['forecast_end_date'])
+            forecast_df['ds'] = date_range
+        
         try:
             # Validate column counts based on whether external features are used
             if run_params["external_features"]:
@@ -236,7 +241,8 @@ if st.session_state.input_submitted:
             else:
                 assert optimal_df.shape[1] == 2 and forecast_df.shape[1] == 2, "Uploaded Historical or Forecast Data does have required number of columns!"
             # Ensure non-empty data structure
-            assert optimal_df.shape[1] > 0, "Uploaded Historical Data does not have enough rows!"
+            assert optimal_df.shape[0] > 0, "Uploaded Historical Data does not have enough rows!"
+            assert forecast_df.shape[0] >= run_params["forecast_period"], "Uploaded Historical and Forecast Data do not have the same number of columns"
             # Ensure same number of columns
             assert optimal_df.shape[1] == forecast_df.shape[1], "Uploaded Historical and Forecast Data do not have the same number of columns"
         except Exception as e:
@@ -373,8 +379,12 @@ if st.session_state.input_submitted:
                                                                   len(test_df))
                 else:
                     raise Exception('Unknown package type!')
+                    
+                predictions_df = predictions_df.merge(test_df.reset_index())
+                predictions_df['y'] = predictions_df['y'].apply(lambda x: 1 if x == 0 else x)
+                predictions_df['y_pred'] = predictions_df['y_pred'].apply(lambda x: 1 if x == 0 else x)
 
-                test_eval[model_type] = compute_metrics(predictions_df.merge(test_df.reset_index()), train_df["y"])
+                test_eval[model_type] = compute_metrics(predictions_df, train_df["y"])
 
             # Convert the list of dictionaries into a DataFrame for easy manipulation
             metrics_df = pd.DataFrame(test_eval).T

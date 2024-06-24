@@ -2,6 +2,7 @@ import logging
 
 import pandas as pd
 import numpy as np
+from pandas.tseries.offsets import DateOffset, BusinessDay, MonthEnd, Week, Day
 from typing import Optional, Dict
 
 # Configure logging
@@ -59,4 +60,52 @@ def validate_input_file(uploaded_file, external_features: bool = False) -> (Opti
     return data.sort_values(by="ds")
 
 
-__all__ = ["validate_input_file"]
+def calculate_end_date(run_params):
+    """
+    Calculate the end date of a forecast range based on the start date, period, and frequency.
+    """
+    # Parse the start date
+    start_date = pd.to_datetime(run_params['forecast_start_date'])
+    
+    # Create the appropriate offset based on the frequency
+    freq = run_params['forecast_freq']
+    period = run_params['forecast_period']
+    
+    if freq == 'B':
+        offset = BusinessDay(n=period)
+    elif freq == 'M':
+        offset = MonthEnd(n=period)
+    elif freq == 'W':
+        offset = Week(n=period)
+    elif freq == 'D':
+        offset = Day(n=period)
+    else:
+        raise ValueError("Invalid forecast frequency specified.")
+    
+    # Calculate the end date
+    end_date = start_date + offset
+    
+    return end_date
+
+
+def extract_date_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Extract features from the Date column.
+    """
+    
+    logger.info("Extracting date features")
+
+    # Extract various features from the Date column
+    df["Year"] = df["Date"].dt.year
+    df["Quarter"] = df["Date"].dt.quarter
+    df["Month"] = df["Date"].dt.strftime("%B")
+    df["Weekday Number"] = df["Date"].dt.weekday
+    df["Day"] = df["Date"].dt.strftime("%A")
+    df["Month Week"] = df["Date"].dt.isocalendar().week
+
+    logger.info("Date features extracted")
+    
+    return df
+
+
+__all__ = ["validate_input_file", "calculate_end_date", "extract_date_features"]
