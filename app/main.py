@@ -8,7 +8,6 @@ import logging
 
 import numpy as np
 import pandas as pd
-import datetime
 
 import plotly.io as pio
 import streamlit as st
@@ -18,6 +17,7 @@ import zipfile
 import plotly.graph_objects as go
 from sklearn.metrics import mean_squared_error
 
+from utils.general import *
 from utils.manager.login import *
 from utils.inputs.validation import *
 from utils.inputs.ads import *
@@ -167,7 +167,7 @@ if st.session_state.input_submitted:
         zipf = zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED)
 
         # Retrieve current timestamp
-        dt_now = datetime.datetime.now().strftime('%d-%m-%Y-%H-%M-%S')
+        dt_now = datetime.now().strftime('%d-%m-%Y-%H-%M-%S')
         
 
         # Set up tabs for modelling, analysis, and download results
@@ -323,10 +323,16 @@ if st.session_state.input_submitted:
         })
 
         modelling_tab.dataframe(dates_df)
-        
-        dates_df.to_excel(writer, sheet_name="Data Overview", index=False)
-        
+
         modelling_tab.markdown(f'**Exogenous Features**: :blue[{", ".join(run_params["exog_cols_all"])}]')
+        
+        col_1, _ = modelling_tab.columns([2, 10])
+        
+        # Add download buttons for plot and data
+        csv_download_button(col_1, dates_df, "Data Overview")
+        
+        # Add to Excel File
+        dates_df.to_excel(writer, sheet_name="Data Overview", index=False)
         
         modelling_tab.divider()
          
@@ -417,7 +423,7 @@ if st.session_state.input_submitted:
                         remaining_time = round((len(model_types) - idx+1)*(end_time - start_time)/60, 2)
                         start_time = time.time()
 
-                        model_search_bar.progress((idx+1)/{len(model_types)}, text=f"⌛ {idx+1}/{len(model_types)} Completed! - Estimated Time Remaining: {remaining_time} minutes")
+                        model_search_bar.progress((idx+1)/len(model_types), text=f"⌛ {idx+1}/{len(model_types)} Completed! - Estimated Time Remaining: {remaining_time} minutes")
 
                     # Test Set Evaluation
                     test_eval = {}
@@ -512,10 +518,16 @@ if st.session_state.input_submitted:
             cmap=cmap_custom, subset=['Coverage']
         )
         
-        metrics_df.to_excel(writer, sheet_name="Model Selection", index=False)
-        
         # Show Test Set Metrics
         modelling_tab.dataframe(metrics_df)
+        
+        col_1, _ = modelling_tab.columns([2, 10])
+
+        # Add download buttons for plot and data
+        csv_download_button(col_1, st.session_state.metrics_df, "Model Selection")
+        
+        # Add to excel file
+        metrics_df.to_excel(writer, sheet_name="Model Selection", index=False)
         
         modelling_tab.divider()
         
@@ -532,15 +544,26 @@ if st.session_state.input_submitted:
         historical_data = optimal_df.reset_index()[['ds', 'y']]
         forecast_data = st.session_state.forecasts_dict[selected_model][['ds', 'y_pred', 'min_pred', 'max_pred']]
         
-        historical_data.to_excel(writer, sheet_name="Historical Data", index=False)
-        forecast_data.to_excel(writer, sheet_name="Forecast Data", index=False)
-        
         # Generate forecast plot
         fig = plot_forecasts(historical_data, forecast_data)
         modelling_tab.plotly_chart(fig, use_container_width=True)
         
         img_fname = "Historical_Forecast_Plot"
         
+        # Prepare an HTML buffer to store the exported plot
+        html_buffer = io.StringIO()
+        fig.write_html(html_buffer, include_plotlyjs='cdn')
+        
+        col_1, col_2, col_3, _ = modelling_tab.columns([2, 2, 2, 6])
+
+        # Add download buttons for plot and data
+        csv_download_button(col_1, historical_data, "Historical Data")
+        csv_download_button(col_2, forecast_data, "Forecast Data")
+        html_download_button(col_3, html_buffer, img_fname)
+        
+        # Add to excel
+        historical_data.to_excel(writer, sheet_name="Historical Data", index=False)
+        forecast_data.to_excel(writer, sheet_name="Forecast Data", index=False)
         writer.book.add_worksheet(img_fname).insert_image(f'A1', f'{img_fname}', {'image_data': io.BytesIO(pio.to_image(fig, format='png'))})
         
         modelling_tab.divider()
@@ -585,8 +608,6 @@ if st.session_state.input_submitted:
         
         col_1, col_2 = analysis_tab.columns([4, 6])
         
-        
-        
         combined_data = combined_data[(combined_data['ds'] >= pd.to_datetime(date_range[0])) &
                                      (combined_data['ds'] <= pd.to_datetime(date_range[1]))]
         
@@ -595,10 +616,22 @@ if st.session_state.input_submitted:
         
         fig = plot_time_series(pivot_table)
         col_2.plotly_chart(fig, use_container_width=True)
-        
+
         # Define file names for data and plot
         data_fname = f'{selected_freq}_{selected_agg}_YoY_Data'
         img_fname = f'{selected_freq}_{selected_agg}_YoY_Plot'
+        
+        # Prepare an HTML buffer to store the exported plot
+        html_buffer = io.StringIO()
+        fig.write_html(html_buffer, include_plotlyjs='cdn')
+        
+        col_1, col_2 = analysis_tab.columns([4, 6])
+
+        # Add download buttons for plot and data
+        csv_download_button(col_1, pivot_table, data_fname)
+        html_download_button(col_2, html_buffer, img_fname)
+        
+        # Add to excel sheet
         pivot_table.to_excel(writer, sheet_name=data_fname)
         writer.sheets[data_fname].insert_image(f'A{len(pivot_table)+2}', f'{img_fname}', {'image_data': io.BytesIO(pio.to_image(fig, format='png'))})
         
@@ -614,7 +647,7 @@ if st.session_state.input_submitted:
         result_buffer.seek(0)
         
         # Notify user about the readiness of the result
-        download_tab.success('Your result is ready for download!', icon="✅")
+        download_tab.success('Your results are ready for download!', icon="✅")
 
         # Define the layout for displaying the results
         col_1, col_2, col_3 = download_tab.columns([2, 2, 8])
@@ -637,4 +670,4 @@ if st.session_state.input_submitted:
             type="primary"
         )
 
-        download_tab.warning("🚀 Please help us save resources and costs: kindly close the tool once you're done. 🙏✨")
+        download_tab.error("🚀 **Please help us save resources and costs: kindly close the tool once you're done.** 🙏✨")
