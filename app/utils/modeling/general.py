@@ -19,17 +19,6 @@ from sktime.performance_metrics.forecasting import (
 )
 
 
-def resample_dataframe(df, forecast_freq='D'):
-    """
-    Resample and compute the mean for the dataframes based on a specified frequency.
-    """
-    
-    df['ds'] = pd.to_datetime(df['ds'])
-    df.set_index('ds', inplace=True)
-    df = df.resample(forecast_freq).sum()
-    
-    return df.reset_index()
-
 
 def determine_params(forecast_freq):
     """

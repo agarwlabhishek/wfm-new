@@ -1,0 +1,15 @@
+apiVersion: spv.no/v2beta1
+kind: AzureKeyVaultSecret
+metadata:
+  name: tex-wfm-dev-volume
+  namespace: tex-dev
+spec:
+  vault:
+    name: azpab3xq
+    object:
+      contentType: application/x-json
+      name: storage-account-jupyterhub-secret
+      type: multi-key-value-secret
+  output:
+    secret:
+      name: tex-wfm-dev-volume

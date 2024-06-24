@@ -88,6 +88,21 @@ def calculate_end_date(run_params):
     return end_date
 
 
+def find_dates(historical_df, run_params):
+    """
+    Initializes and returns run parameters based on historical data.
+    """
+    # Set historical start and end dates from the DataFrame
+    run_params["historical_start_date"] = historical_df['ds'].min()
+    run_params["historical_end_date"] = historical_df['ds'].max()
+
+    # Set forecasting start and end dates
+    run_params["forecast_start_date"] = historical_df['ds'].max() + pd.Timedelta(days=1)
+    run_params["forecast_end_date"] = calculate_end_date(run_params)
+
+    return run_params
+
+
 def extract_date_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     Extract features from the Date column.
@@ -107,5 +122,39 @@ def extract_date_features(df: pd.DataFrame) -> pd.DataFrame:
     
     return df
 
+def validate_dataframes(optimal_df, forecast_df, run_params):
+    """
+    Validates the column and row counts of dataframes based on specified parameters.
+    """
+    try:
+        # Validate column counts based on whether external features are used
+        if run_params["external_features"]:
+            assert optimal_df.shape[1] > 2 and forecast_df.shape[1] > 2, \
+                "Uploaded Historical or Forecast Data does not have the required number of columns!"
+        else:
+            assert optimal_df.shape[1] == 2 and forecast_df.shape[1] == 2, \
+                "Uploaded Historical or Forecast Data does not have the required number of columns!"
 
-__all__ = ["validate_input_file", "calculate_end_date", "extract_date_features"]
+        # Ensure non-empty data structure
+        assert optimal_df.shape[0] > 0, "Uploaded Historical Data does not have enough rows!"
+        assert forecast_df.shape[0] >= run_params["forecast_period"], \
+            "Forecast Data does not have enough rows based on the forecast period!"
+
+        # Ensure same number of columns
+        assert optimal_df.shape[1] == forecast_df.shape[1], \
+            "Uploaded Historical and Forecast Data do not have the same number of columns"
+    
+    except AssertionError as e:
+        raise ValueError(f"Invalid input data format: {e}")
+        
+        
+def resample_dataframe(df, forecast_freq='D'):
+    """
+    Resample and compute the mean for the dataframes based on a specified frequency.
+    """
+    
+    df['ds'] = pd.to_datetime(df['ds'])
+    df.set_index('ds', inplace=True)
+    df = df.resample(forecast_freq).sum()
+    
+    return df.reset_index()

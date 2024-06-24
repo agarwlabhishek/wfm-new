@@ -28,9 +28,15 @@ def plot_forecasts(historical_data, forecast_data):
     fig.add_trace(go.Scatter(x=[forecast_start_date, forecast_start_date], y=[min(historical_data['y'].min(), forecast_data['min_pred'].min()), max(historical_data['y'].max(), forecast_data['max_pred'].max())],
                              mode='lines', name='Start of Forecast', line=dict(color='black', dash='dot')))
 
-    fig.update_layout(autosize=False, width=1000, height=600)  # Set the size of the figure
+    fig.update_layout(
+        autosize=False,
+        width=1000,
+        height=400,
+        legend=dict(x=1.05, y=0.5),
+        margin=dict(t=1, b=1, r=1, l=1)
+    )
     fig.update_xaxes(dtick="M1")  # Set the x-axis ticks to be month-based
-
+    
     return fig
 
 
@@ -72,7 +78,7 @@ def create_pivot_table(data, index_unit='month', aggfunc='mean'):
         result = result.reindex(order)
 
     # Calculate percentage change from the previous year
-    result = result.join(result.pct_change(axis='columns') * 100, rsuffix='% Change')
+    result = result.join(result.pct_change(axis='columns') * 100, rsuffix=' % Change')
 
     # Clean up infinite and NaN values resulted from zero division or empty previous year data
     result = result.replace([np.inf, -np.inf], np.nan)
@@ -101,6 +107,15 @@ def plot_time_series(data):
     # Update the layout to add titles and axis labels
     fig.update_layout(legend_title='Year',
                       xaxis=dict(type='category'))  # Ensure categorical handling of x-axis for clarity
+    
+
+    fig.update_layout(
+        autosize=False,
+        width=600,
+        height=400,
+        legend=dict(x=1.05, y=0.5),
+        margin=dict(t=1, b=1, r=1, l=1)
+    )
 
     # Show the plot
     return fig

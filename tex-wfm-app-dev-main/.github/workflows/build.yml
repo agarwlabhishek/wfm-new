@@ -1,0 +1,43 @@
+name: TeX Workforce Management
+
+on:
+  push:
+    branches: [ main ]
+
+  workflow_dispatch:
+
+env:
+  NAMESPACE: tex-dev
+  APPNAME: tex-wfm-dev
+
+jobs:
+  build_and_deploy:
+    environment: tex-dev
+    runs-on: [ azpa-prod ]
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set env
+        run: |
+          echo "GIT_SHA=$(echo $GITHUB_SHA | cut -c 1-6)" >> $GITHUB_ENV          
+      - name: login to azure
+        run: |
+          # Login with service principal credentials
+          az login --service-principal -u "${{ secrets.ARM_CLIENT_ID }}" -p "${{ secrets.ARM_CLIENT_SECRET }}" --tenant "${{ secrets.ARM_TENANT_ID }}" --output none
+          az account set --subscription GDP-04-westeurope-prod
+          az account show
+      - name: Build and deploy the Docker Image
+        run: |
+          az acr build --registry "${{ secrets.AZ_ACR }}" --image azpa/$APPNAME:$GIT_SHA --image azpa/$APPNAME:$GITHUB_REF_NAME --no-logs .
+      - name: Deploy the app and configuration
+        run: |
+          helm lint ./deploy/kubernetes -f ./deploy/values-prod.yaml
+          az keyvault secret download --vault-name "${{ secrets.AZ_KEYVAULT }}" --name aks-cicd-kubeconfig --file ./kubeconfig
+          export KUBECONFIG=./kubeconfig
+          unset HTTP_PROXY
+          unset HTTPS_PROXY
+          
+          kubectl apply -f ./deploy/akvs-volume-prod.yaml
+
+          helm upgrade --debug --set appName=$APPNAME --set gitSha=$GIT_SHA -f ./deploy/values-prod.yaml --install $APPNAME ./deploy/kubernetes -n $NAMESPACE
+          helm list -n $NAMESPACE
+          rm ./kubeconfig

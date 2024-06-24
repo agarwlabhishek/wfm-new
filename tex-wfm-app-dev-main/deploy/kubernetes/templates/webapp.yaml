@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.appName }}
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}
+        owner: customer
+        team: architecture
+    spec:
+      containers:
+        - name: {{ .Values.appName }}
+          image: 'prodazpab3xq.azurecr.io/azpa/{{ .Values.appName }}:{{ .Values.gitSha }}'
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8050
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 4096Mi
+            requests:
+              cpu: 2000m
+              memory: 4096Mi
+          volumeMounts:
+            - name: data
+              mountPath: "/gdp_demo"
+      nodeSelector:
+        agentpool: gdpservices
+
+      volumes:
+        - name: data
+          csi:
+            driver: file.csi.azure.com
+            volumeAttributes:
+              secretName: "tex-wfm-dev-volume"
+              shareName: "jupyterhub-share"
+              folderName: "gdp_demo"
+              mountOptions: "dir_mode=0777,file_mode=0777,cache=strict,actimeo=30"
+      nodeSelector:
+        agentpool: gdpservices
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Values.appName }}-fileshare
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: azurefile-csi-retain
+  volumeName: "jupyterhub-share"
+  resources:
+    requests:
+      storage: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}
+spec:
+  ports:
+    - port: 8050
+      targetPort: 8050
+      name: tex-wfm-dev
+  selector:
+    app: {{ .Values.appName }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Values.appName }}
+  annotations:
+    kubernetes.io/ingress.class: traefik2
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+#    traefik.ingress.kubernetes.io/router.middlewares: gdp-ingress-auth-azuread@kubernetescrd
+
+spec:
+  rules:
+    - host: {{ .Values.appName }}.gdp-04.we1.azure.aztec.cloud.allianz
+      http:
+        paths:
+          - backend:
+              service:
+                name: {{ .Values.appName }}
+                port:
+                  name: tex-wfm-dev
+            path: /
+            pathType: ImplementationSpecific

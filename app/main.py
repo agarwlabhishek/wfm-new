@@ -60,6 +60,7 @@ col_2.caption("")
 col_2.write("v2.0.0")
 st.sidebar.write("""The tool leverages advanced statistical & machine learning models to deliver automated, precise predictions for optimizing operational efficiency.""")
 
+
 if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
 
@@ -91,7 +92,7 @@ if st.session_state.logged_in:
         forecast_freq = st.selectbox("Forecast Frequency :repeat:", ["B", "D", "W", "M"])
 
         # Add dropdown for data selection
-        data_selection = st.radio("Automatic Data Selection :scissors:", ["No", "Yes"])
+        data_selection = st.radio("Automatic Data Selection :scissors:", [False, True])
         
         # Add file uploaders to the sidebar
         # uploaded_historical_file = st.file_uploader("Historical Data (.csv) :arrow_up: **(MANDATORY)**", type=["csv"])
@@ -119,15 +120,16 @@ if st.session_state.input_submitted:
             st.session_state.forecast_freq = forecast_freq
             st.session_state.run_search = True
             
-            if forecast_freq == "D":
-                st.session_state.forecast_period = 92
-            elif forecast_freq == "B":
-                st.session_state.forecast_period = 66
-            elif forecast_freq == "W":
-                st.session_state.forecast_period = 26
-            elif forecast_freq == "M":
-                forecast_period = 12
-
+            # Dictionary to map forecast frequencies to periods
+            forecast_periods = {
+                "D": 92,  # Daily frequency
+                "B": 66,  # Business days frequency
+                "W": 26,  # Weekly frequency
+                "M": 12   # Monthly frequency
+            }
+            
+            # Set forecast period based on the frequency
+            st.session_state.forecast_period = forecast_periods.get(forecast_freq)
 
         if 'data_selection' not in st.session_state or data_selection != st.session_state.data_selection:
             st.session_state.data_selection = data_selection
@@ -168,16 +170,12 @@ if st.session_state.input_submitted:
             # Validate the histoical data
             historical_df = validate_input_file(uploaded_historical_file, run_params["external_features"])
             logging.info(f"Historical Data Size: {historical_df.shape}")
-            # Find the min data for optimal train data
-            run_params["historical_start_date"] = historical_df['ds'].min()
-            run_params["historical_end_date"] = historical_df['ds'].max()
-            run_params["forecast_start_date"] = historical_df['ds'].max() + pd.Timedelta(days=1)
-            run_params["forecast_end_date"] = calculate_end_date(run_params)
+            # Find the corresponding dates
+            run_params = find_dates(historical_df, run_params)
 
         except Exception as e:
             # Log this exception or handle it further up the call stack
             raise Exception(f"An error occurred while validating the uploaded historical data: {str(e)}")
-            
             
         try:
             if run_params["external_features"]:
@@ -208,7 +206,9 @@ if st.session_state.input_submitted:
 
                 # Add 180 days for feature engineering to optimal window
                 optimal_window_size += 180
-
+                
+                modelling_tab.success(f":white_check_mark: Automatic Data Selection: Historical data has been truncated to **{optimal_window_size}** most recent days!")
+                
             else:
                 optimal_window_size = len(historical_df)
 
@@ -227,31 +227,18 @@ if st.session_state.input_submitted:
         run_params["optimal_start_date"] = optimal_df['ds'].min()
         run_params["optimal_end_date"] = optimal_df['ds'].max()
         
-        st.success(f"Automatic Data Selection: Historical data has been truncated to **{optimal_window_size}** most recent days!")
-        
-        #####################################################################################
-        
+        # Populate forecast dataframe if needed
         if not run_params["external_features"]:
             date_range = pd.date_range(start=run_params['forecast_start_date'],
                                                        end=run_params['forecast_end_date'])
             forecast_df['ds'] = date_range
         
-        try:
-            # Validate column counts based on whether external features are used
-            if run_params["external_features"]:
-                assert optimal_df.shape[1] > 2 and forecast_df.shape[1] > 2, "Uploaded Historical or Forecast Data does have required number of columns!"
-            else:
-                assert optimal_df.shape[1] == 2 and forecast_df.shape[1] == 2, "Uploaded Historical or Forecast Data does have required number of columns!"
-            # Ensure non-empty data structure
-            assert optimal_df.shape[0] > 0, "Uploaded Historical Data does not have enough rows!"
-            assert forecast_df.shape[0] >= run_params["forecast_period"], "Uploaded Historical and Forecast Data do not have the same number of columns"
-            # Ensure same number of columns
-            assert optimal_df.shape[1] == forecast_df.shape[1], "Uploaded Historical and Forecast Data do not have the same number of columns"
-        except Exception as e:
-            raise ValueError(f"Invalid input data format: {e}")
+        # Validate dataframes
+        validate_dataframes(optimal_df, forecast_df, run_params)
         
-        st.success(f"Data Validation: Input data has been validated sucessfully!")
+        modelling_tab.success(f":white_check_mark: Data Validation: Input data has been validated sucessfully!")
         
+        #####################################################################################
         
         try:
             # Resample data
@@ -272,49 +259,52 @@ if st.session_state.input_submitted:
         # Get the names of the exogenous variables from the train data
         run_params["exog_cols_all"]  = list((optimal_df.columns).difference(['y', 'ds']))
         
-        
         try:
+            # Determine parameters based on forecast frequency
             initial_window_size, lag_window_range, rolling_window_range, test_size, test_steps = determine_params(forecast_freq)
-            logger.info(f"Initial Window Size: {initial_window_size}, Lag Window Range: {lag_window_range}")
-            logger.info(f"Test Size: {test_size}, Test Steps: {test_steps}")
+
+            # Log all parameters at once
+            logger.info(f"Params - Initial Window Size: {initial_window_size}, Lag Window Range: {lag_window_range}, "
+                        f"Rolling Window Range: {rolling_window_range}, Test Size: {test_size}, Test Steps: {test_steps}")
+
+            # Update run_params directly with the values
+            run_params.update({
+                "initial_window_size": initial_window_size,
+                "lag_window_range": lag_window_range,
+                "rolling_window_range": rolling_window_range,
+                "test_size": test_size,
+                "test_steps": test_steps
+            })
         except Exception as e:
-            raise Exception(e)
-            
-        run_params.update({
-            "initial_window_size": initial_window_size,
-            "lag_window_range": lag_window_range,
-            "rolling_window_range": rolling_window_range,
-            "test_size": test_size,
-            "test_steps": test_steps
-        })
-        
-        
+            # Provide a specific error message if there's an exception
+            raise Exception(f"Error determining parameters: {e}")
+
         try:
-            test_df = optimal_df[-test_size:].copy(deep=True)
-            test_df = test_df.set_index('ds').resample(run_params["forecast_freq"]).sum()
-            test_df = test_df.fillna(0)
+            # Resample and clean the dataframes for test and train
+            test_df = optimal_df[-run_params["test_size"]:].set_index('ds').resample(run_params["forecast_freq"]).sum().fillna(0)
+            train_df = optimal_df[:-run_params["test_size"]].set_index('ds').resample(run_params["forecast_freq"]).sum().fillna(0)
 
-            train_df = optimal_df[:-test_size].copy(deep=True)
-            train_df = train_df.set_index('ds').resample(run_params["forecast_freq"]).sum()
-            train_df = train_df.fillna(0)
-
+            # Assert to ensure no data is lost during split
             assert len(train_df) + len(test_df) == len(optimal_df)
 
-            run_params["train_start_date"] = train_df.index.min()
-            run_params["train_end_date"] = train_df.index.max()
+            # Update training and testing periods in run_params
+            run_params.update({
+                "train_start_date": train_df.index.min(),
+                "train_end_date": train_df.index.max(),
+                "test_start_date": test_df.index.min(),
+                "test_end_date": test_df.index.max()
+            })
 
-            run_params["test_start_date"] = test_df.index.min()
-            run_params["test_end_date"] = test_df.index.max()
+            # Resample and clean the entire optimal_df and forecast_df
+            optimal_df = optimal_df.set_index('ds').resample(run_params["forecast_freq"]).sum().fillna(0)
+            forecast_df = forecast_df.set_index('ds').resample(run_params["forecast_freq"]).sum().fillna(0)
 
-            optimal_df = optimal_df.set_index('ds').resample(run_params["forecast_freq"]).sum()
-            optimal_df = optimal_df.fillna(0)
-
-            forecast_df = forecast_df.set_index('ds').resample(run_params["forecast_freq"]).sum()
-            forecast_df = forecast_df.fillna(0)
         except Exception as e:
             raise ValueError(f"Failed to split into train and test: {e}")
-            
-            
+    
+    
+        modelling_tab.subheader(f"Data Overview :eyes:")
+        
         dates_df = pd.DataFrame({
             'Type': ['Uploaded Period', 'Optimal Period', 'Forecast Period'],
             'From': [run_params["historical_start_date"].strftime('%d-%m-%Y'), run_params["optimal_start_date"].strftime('%d-%m-%Y'), run_params["forecast_start_date"].strftime('%d-%m-%Y')],
@@ -322,123 +312,173 @@ if st.session_state.input_submitted:
         })
 
         modelling_tab.dataframe(dates_df)
+        
+        modelling_tab.markdown(f'**Exogenous Features**: :blue[{", ".join(run_params["exog_cols_all"])}]')
+        
+        modelling_tab.divider()
          
         #####################################################################################
-            
-        if st.session_state.run_search:
-            
-            current_dir = 'utils/modeling'
+        
+        # Display the parameters for the best model
+        modelling_tab.subheader(f"Model Selection :mag_right:")
 
-            model_types = {
-                'prophet': 'sktime',
-                'naive': 'sktime',
-                'random_forest': 'skforecast',
-                'xgboost': 'skforecast'
-            }
-
-            search_results = {}
-
-            for model_type, package_type in model_types.items():
-                # Load parameters for grid search
-                model, param_grid = load_model_params_and_create_instance(model_type, current_dir)
-
-                if package_type == 'sktime':
-                    # Find best model
-                    best_configuration, all_results, best_model = find_best_model_sktime(
-                        train_df['y'], run_params, model, param_grid
-                    )
-
-                elif package_type == 'skforecast':
-                    # Find best model
-                    best_configuration, all_results, best_model = find_best_model_skforecast(
-                        lag_window_range, model, train_df, param_grid, run_params
-                    )
-
-                else:
-                    raise Exception('Unknown package type!')
-
-                # Save best model and config
-                search_results[model_type] = {
-                    'best_model': best_model,
-                    'best_configuration': best_configuration,
-                    'all_results': all_results,
-                    'package_type': package_type
-                }
-            
-            test_eval = {}
-
-            for model_type, model_results in search_results.items():
-                if model_results['package_type'] == 'sktime':
-                    best_model = search_results[model_type]['best_model']
-                    best_model.fit(y=train_df['y'])
-                    predictions_df = generate_forecast_sktime(best_model, len(test_df))
-                elif model_results['package_type'] == 'skforecast':
-                    best_model = search_results[model_type]['best_model']
-                    best_model.fit(y=train_df['y'], exog=train_df[run_params["exog_cols_all"]])
-                    predictions_df = generate_forecast_skforecast(best_model, run_params, train_df['y'],
-                                                                  test_df.drop('y', axis=1),
-                                                                  run_params["test_start_date"],
-                                                                  len(test_df))
-                else:
-                    raise Exception('Unknown package type!')
-                    
-                predictions_df = predictions_df.merge(test_df.reset_index())
-                predictions_df['y'] = predictions_df['y'].apply(lambda x: 1 if x == 0 else x)
-                predictions_df['y_pred'] = predictions_df['y_pred'].apply(lambda x: 1 if x == 0 else x)
-
-                test_eval[model_type] = compute_metrics(predictions_df, train_df["y"])
-
-            # Convert the list of dictionaries into a DataFrame for easy manipulation
-            metrics_df = pd.DataFrame(test_eval).T
-
-            # Round off the values in the DataFrame to 3 decimal places for better readability
-            metrics_df = metrics_df.round(3)
-
-            # Sort the DataFrame based on the performance metrics in the order of preference
-            # MASE > RMSSE > Coverage > MAPE > RMSPE
-            metric_order = ['MASE', 'RMSSE', 'Coverage', 'MAPE', 'RMSPE']
-            ascending_order = [True, True, False, True, True]
-
-            metrics_df = metrics_df.sort_values(by=metric_order, ascending=ascending_order).reset_index()
-
-            metrics_df.rename(columns={'index': 'Model'}, inplace=True)
-            
-            # Generate Forecasts
-            forecasts_dict = {}
-
-            for model_type, model_results in search_results.items():
-                if model_results['package_type'] == 'sktime':
-                    best_model = search_results[model_type]['best_model']
-                    best_model.fit(y=optimal_df['y'])
-                    predictions = generate_forecast_sktime(best_model, run_params['forecast_period'])
-                elif model_results['package_type'] == 'skforecast':
-                    best_model = search_results[model_type]['best_model']
-                    best_model.fit(y=optimal_df['y'], exog=optimal_df[run_params["exog_cols_all"]])
-                    predictions = generate_forecast_skforecast(best_model, run_params, optimal_df['y'],
-                                                                             forecast_df.drop('y', axis=1),
-                                                                             run_params["forecast_start_date"],
-                                                                             run_params['forecast_period'])
-                else:
-                    raise Exception('Unknown package type!')
-
-                forecasts_dict[model_type] = predictions.head(run_params['forecast_period'])
-            
-            st.session_state.metrics_df = metrics_df
-            st.session_state.forecasts_dict = forecasts_dict
-            st.session_state.run_search = False
-            
-            st.success(F"Grid Search completed in min(s)")
-            
+        current_dir = 'utils/modeling'
         
         model_types = {
-                'Prophet': 'prophet',
-                'Naive': 'naive',
-                'Random Forest': 'random_forest',
-                'XGBoost': 'xgboost'
+                'Prophet': {
+                    'fname': 'prophet',
+                    'package_type': 'sktime'
+                },
+                'Naive': {
+                    'fname': 'naive',
+                    'package_type': 'sktime'
+                },
+                'Random Forest': {
+                    'fname': 'random_forest',
+                    'package_type': 'skforecast'
+                },
+                'XGBoost': {
+                    'fname': 'xgboost',
+                    'package_type': 'skforecast'
+                }
         }
+
+        if st.session_state.run_search:
+            waiting_messages = [
+                    "Hang tight! Forecasting in progress! 😊",
+                    "Patience is key! Training in progress! 💪",
+                    "Almost there!  Smarter by the second! 🚀",
+                    "Stay tuned! Fine-tuning skills! 📡 ",
+                    "Magic in progress! Brewing predictions! 🐣",
+                    "Behind the scenes magic! Appreciate your patience! 🙏",
+                    "Remember, coffee breaks are essential for survival ☕️ (and sanity).",
+                ]
+            
+            random_idx = random.randint(0, len(waiting_messages)-1)
+            
+            with modelling_tab:
+                with st.spinner(waiting_messages[random_idx]):
+            
+                    # Create a progress bar for the model search
+                    model_search_bar = modelling_tab.progress(0)
+                    model_search_bar.progress(0/len(model_types), text=f"⌛ Estimated Time Remaining: Calculating")
+
+                    # Record the start time of the model search
+                    init_time = time.time()
+                    start_time = time.time()
+
+                    search_results = {}
+
+                    for idx, (model_name, model_values) in enumerate(model_types.items()):
+                        model_fname = model_values['fname']
+                        package_type = model_values['package_type']
+                        
+                        # Load parameters for grid search
+                        model, param_grid = load_model_params_and_create_instance(model_fname, current_dir)
+
+                        if package_type == 'sktime':
+                            # Find best model
+                            best_configuration, all_results, best_model = find_best_model_sktime(
+                                train_df['y'], run_params, model, param_grid
+                            )
+
+                        elif package_type == 'skforecast':
+                            # Find best model
+                            best_configuration, all_results, best_model = find_best_model_skforecast(
+                                lag_window_range, model, train_df, param_grid, run_params
+                            )
+
+                        else:
+                            raise Exception('Unknown package type!')
+
+                        # Save best model and config
+                        search_results[model_name] = {
+                            'best_model': best_model,
+                            'best_configuration': best_configuration,
+                            'all_results': all_results,
+                            'package_type': package_type
+                        }
+
+                        # Update the progress bar with the time taken
+                        end_time = time.time()
+                        remaining_time = round((len(model_types) - idx+1)*(end_time - start_time)/60, 2)
+                        start_time = time.time()
+
+                        model_search_bar.progress((idx+1)/{len(model_types)}, text=f"⌛ {idx+1}/{len(model_types)} Completed! - Estimated Time Remaining: {remaining_time} minutes")
+
+                    # Test Set Evaluation
+                    test_eval = {}
+
+                    for model_name, model_results in search_results.items():
+                        if model_results['package_type'] == 'sktime':
+                            best_model = search_results[model_name]['best_model']
+                            best_model.fit(y=train_df['y'])
+                            predictions_df = generate_forecast_sktime(best_model, len(test_df))
+                        elif model_results['package_type'] == 'skforecast':
+                            best_model = search_results[model_name]['best_model']
+                            best_model.fit(y=train_df['y'], exog=train_df[run_params["exog_cols_all"]])
+                            predictions_df = generate_forecast_skforecast(best_model, run_params, train_df['y'],
+                                                                          test_df.drop('y', axis=1),
+                                                                          run_params["test_start_date"],
+                                                                          len(test_df))
+                        else:
+                            raise Exception('Unknown package type!')
+
+                        predictions_df = predictions_df.merge(test_df.reset_index())
+                        predictions_df['y'] = predictions_df['y'].apply(lambda x: 1 if x == 0 else x)
+                        predictions_df['y_pred'] = predictions_df['y_pred'].apply(lambda x: 1 if x == 0 else x)
+
+                        test_eval[model_name] = compute_metrics(predictions_df, train_df["y"])
+                     
+                    # Convert the list of dictionaries into a DataFrame for easy manipulation
+                    metrics_df = pd.DataFrame(test_eval).T
+
+                    # Round off the values in the DataFrame to 3 decimal places for better readability
+                    metrics_df = metrics_df.round(3)
+
+                    # Sort the DataFrame based on the performance metrics in the order of preference
+                    # MASE > RMSSE > Coverage > MAPE > RMSPE
+                    metric_order = ['MASE', 'RMSSE', 'Coverage', 'MAPE', 'RMSPE']
+                    ascending_order = [True, True, False, True, True]
+
+                    metrics_df = metrics_df.sort_values(by=metric_order, ascending=ascending_order).reset_index()
+                    metrics_df.rename(columns={'index': 'Model'}, inplace=True)
+                    st.session_state.metrics_df = metrics_df
+
+                    #####################################################################################
+
+                    # Generate Forecasts
+                    forecasts_dict = {}
+
+                    for model_type, model_results in search_results.items():
+                        if model_results['package_type'] == 'sktime':
+                            best_model = search_results[model_type]['best_model']
+                            best_model.fit(y=optimal_df['y'])
+                            predictions = generate_forecast_sktime(best_model, run_params['forecast_period'])
+                        elif model_results['package_type'] == 'skforecast':
+                            best_model = search_results[model_type]['best_model']
+                            best_model.fit(y=optimal_df['y'], exog=optimal_df[run_params["exog_cols_all"]])
+                            predictions = generate_forecast_skforecast(best_model, run_params, optimal_df['y'],
+                                                                                     forecast_df.drop('y', axis=1),
+                                                                                     run_params["forecast_start_date"],
+                                                                                     run_params['forecast_period'])
+                        else:
+                            raise Exception('Unknown package type!')
+
+                        forecasts_dict[model_type] = predictions.head(run_params['forecast_period'])
+
+                    
+                    st.session_state.forecasts_dict = forecasts_dict
+                    st.session_state.run_search = False
+
+                    end_time = time.time()
+                    modelling_tab.success(f":stopwatch: Search Completed in {round((end_time - init_time)/60, 2)} minutes") 
+
+
+        #####################################################################################
         
         # Show the best model
-        st.success(f":first_place_medal: Best Model: {st.session_state.metrics_df.iloc[0]['Model']}")
+        modelling_tab.success(f":first_place_medal: Best Model: {st.session_state.metrics_df.iloc[0]['Model']}")
 
         # Creating the custom color map
         cmap_custom = sns.light_palette("seagreen", as_cmap=True)
@@ -460,20 +500,32 @@ if st.session_state.input_submitted:
         )
         
         # Show Test Set Metrics
-        st.dataframe(metrics_df)
+        modelling_tab.dataframe(metrics_df)
+        
+        modelling_tab.divider()
+        
+        #####################################################################################
+        
+        modelling_tab.subheader("Forecasts Generated :chart_with_upwards_trend:")
+        
+        col_1, _ = modelling_tab.columns([2, 10])
         
         # Choose Model Type
-        selected_model = st.selectbox("Choose Model Type :brain:", model_types.keys(), key="model_dropdown")
-        selected_model = model_types[selected_model]
+        selected_model = col_1.selectbox("Choose Model Type :brain:", st.session_state.metrics_df['Model'].tolist(), key="model_dropdown")
         
         # Extract relevant data from the historical and forecast DataFrames
         historical_data = optimal_df.reset_index()[['ds', 'y']]
         forecast_data = st.session_state.forecasts_dict[selected_model][['ds', 'y_pred', 'min_pred', 'max_pred']]
         
-        
         # Generate forecast plot
         fig = plot_forecasts(historical_data, forecast_data)
-        st.plotly_chart(fig, use_container_width=True)
+        modelling_tab.plotly_chart(fig, use_container_width=True)
+        
+        modelling_tab.divider()
+        
+        #####################################################################################
+        
+        analysis_tab.subheader("Year-Over-Year Comparsions :scales:")
         
         # Combine all data
         historical_data['type'] = 0 # 1 for historical
@@ -494,15 +546,34 @@ if st.session_state.input_submitted:
         
         agg_types = ['Mean', 'Sum', 'Min', 'Max']
         
-        col_1, col_2, _ = st.columns([2, 2, 6])
-        selected_freq = col_1.selectbox("Select Frequency Type", freq_types.keys(), key="plot_freq_dropdown")
+        col_1, col_2, col_3, _ = analysis_tab.columns([2, 2, 2, 8])
+        selected_freq = col_1.selectbox("Frequency Type", freq_types.keys(), key="plot_freq_dropdown")
         selected_freq = freq_types[selected_freq]
-        selected_agg = col_2.selectbox("Choose Model Type", agg_types, key="table_freq_dropdown").lower()
+        selected_agg = col_2.selectbox("Aggregation Function", agg_types, key="table_freq_dropdown").lower()
         
-        col_1, col_2 = st.columns([2, 2])
+        min_value=run_params["historical_start_date"]
+        max_value=run_params["forecast_end_date"]
+        date_range = col_3.date_input(
+                        "Date Range",
+                        (min_value, max_value),
+                        min_value=min_value,
+                        max_value=max_value,
+                        format="MM/DD/YYYY",
+                    )
+        
+        col_1, col_2 = analysis_tab.columns([4, 6])
+        
+        
+        
+        combined_data = combined_data[(combined_data['ds'] >= pd.to_datetime(date_range[0])) &
+                                     (combined_data['ds'] <= pd.to_datetime(date_range[1]))]
         
         pivot_table = create_pivot_table(combined_data, selected_freq, selected_agg)
-        col_1.dataframe(pivot_table)
+        col_1.dataframe(pivot_table, use_container_width=True)
         
         fig = plot_time_series(pivot_table)
         col_2.plotly_chart(fig, use_container_width=True)
+        
+        analysis_tab.divider()
+        
+        #####################################################################################
