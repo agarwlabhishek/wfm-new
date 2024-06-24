@@ -158,6 +158,17 @@ if st.session_state.input_submitted:
                 "metric_key": "mspe"
             }
         
+        # Create a Pandas Excel writer for master result file
+        result_buffer = io.BytesIO()
+        writer = pd.ExcelWriter(result_buffer, engine="xlsxwriter")
+
+        # Create a Zip File for storing html files
+        zip_buffer = io.BytesIO()
+        zipf = zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED)
+
+        # Retrieve current timestamp
+        dt_now = datetime.datetime.now().strftime('%d-%m-%Y-%H-%M-%S')
+        
 
         # Set up tabs for modelling, analysis, and download results
         modelling_tab, analysis_tab, download_tab = st.tabs(["Modelling :bar_chart:", 
@@ -312,6 +323,8 @@ if st.session_state.input_submitted:
         })
 
         modelling_tab.dataframe(dates_df)
+        
+        dates_df.to_excel(writer, sheet_name="Data Overview", index=False)
         
         modelling_tab.markdown(f'**Exogenous Features**: :blue[{", ".join(run_params["exog_cols_all"])}]')
         
@@ -499,6 +512,8 @@ if st.session_state.input_submitted:
             cmap=cmap_custom, subset=['Coverage']
         )
         
+        metrics_df.to_excel(writer, sheet_name="Model Selection", index=False)
+        
         # Show Test Set Metrics
         modelling_tab.dataframe(metrics_df)
         
@@ -517,9 +532,16 @@ if st.session_state.input_submitted:
         historical_data = optimal_df.reset_index()[['ds', 'y']]
         forecast_data = st.session_state.forecasts_dict[selected_model][['ds', 'y_pred', 'min_pred', 'max_pred']]
         
+        historical_data.to_excel(writer, sheet_name="Historical Data", index=False)
+        forecast_data.to_excel(writer, sheet_name="Forecast Data", index=False)
+        
         # Generate forecast plot
         fig = plot_forecasts(historical_data, forecast_data)
         modelling_tab.plotly_chart(fig, use_container_width=True)
+        
+        img_fname = "Historical_Forecast_Plot"
+        
+        writer.book.add_worksheet(img_fname).insert_image(f'A1', f'{img_fname}', {'image_data': io.BytesIO(pio.to_image(fig, format='png'))})
         
         modelling_tab.divider()
         
@@ -574,6 +596,45 @@ if st.session_state.input_submitted:
         fig = plot_time_series(pivot_table)
         col_2.plotly_chart(fig, use_container_width=True)
         
+        # Define file names for data and plot
+        data_fname = f'{selected_freq}_{selected_agg}_YoY_Data'
+        img_fname = f'{selected_freq}_{selected_agg}_YoY_Plot'
+        pivot_table.to_excel(writer, sheet_name=data_fname)
+        writer.sheets[data_fname].insert_image(f'A{len(pivot_table)+2}', f'{img_fname}', {'image_data': io.BytesIO(pio.to_image(fig, format='png'))})
+        
         analysis_tab.divider()
         
         #####################################################################################
+        
+        # Close the Pandas Excel writer and output the Excel file to the BytesIO object
+        writer.close()
+        zipf.close()
+
+        # Seek to the beginning of the stream
+        result_buffer.seek(0)
+        
+        # Notify user about the readiness of the result
+        download_tab.success('Your result is ready for download!', icon="✅")
+
+        # Define the layout for displaying the results
+        col_1, col_2, col_3 = download_tab.columns([2, 2, 8])
+
+        # Add a button for downloading the results
+        col_1.download_button(
+            label="Forecasts and Analysis (.xlsx)",
+            data=result_buffer,
+            file_name=f"{dt_now}_Forecast_Analysis.xlsx",
+            mime="application/vnd.ms-excel",
+            type="primary"
+        )
+
+        # Add a button for downloading the results
+        col_2.download_button(
+            label="Interactive Plots (.zip)",
+            data=zip_buffer.getvalue(),
+            file_name=f"{dt_now}_Interactive_Plots.zip",
+            mime="application/zip",
+            type="primary"
+        )
+
+        download_tab.warning("🚀 Please help us save resources and costs: kindly close the tool once you're done. 🙏✨")
