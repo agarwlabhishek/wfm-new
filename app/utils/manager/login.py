@@ -46,18 +46,24 @@ def login_page() -> None:
     Displays login page and processes the login.
     """
     try:
-        st.header('Login')
+        login_placeholder = st.empty()
+        
+        with login_placeholder.container():
+        
+            st.header('Login')
 
-        username = st.text_input('Username')
-        password = st.text_input('Password', type='password')
+            username = st.text_input('Username')
+            password = st.text_input('Password', type='password')
 
-        if st.button('Login'):
-            allowed_users = load_allowed_users()
-            if is_valid_user(username, password, allowed_users):
-                st.success('Logged in successfully!')
-                st.session_state.logged_in = True
-            else:
-                st.error('Invalid username or password', icon="🚨")
+            if st.button('Login'):
+                allowed_users = load_allowed_users()
+                if is_valid_user(username, password, allowed_users):
+                    st.session_state.logged_in = True
+                    st.session_state.logged_username = username
+                    st.success('Login successful!')
+                    login_placeholder.empty()
+                else:
+                    st.error('Invalid username or password', icon="🚨")
 
     except Exception as e:
         logger.error(f"Error in login page: {e}")
