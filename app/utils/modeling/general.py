@@ -28,10 +28,10 @@ def determine_params(forecast_freq):
     # Define settings for different scenarios using dictionaries
     # initial_window_size, lag_window_range, rolling_window_range, test_size, test_steps
     freq_settings = {
-        "D": (90, [7, 15, 30, 60, 90], [3, 7, 15, 30, 60, 90], 30, 3),
-        "B": (60, [5, 10, 20, 40, 60], [3, 5, 10, 20, 40, 60], 20, 2),
-        "W": (12, [2, 4, 6, 8, 12], [2, 4, 6, 8, 12], 6, 1),
-        "M": (3, [1, 2, 3], [1, 2, 3], 3, 1)
+        "D": (90, [30, 45], [3, 7, 15, 30, 60, 90], 30, 3),
+        "B": (60, [20, 30], [3, 5, 10, 20, 40, 60], 20, 2),
+        "W": (12, [6, 8, 12], [2, 4, 6, 8, 12], 6, 1),
+        "M": (3, [3, 6], [1, 2, 3], 3, 1)
     }
     
     try:
