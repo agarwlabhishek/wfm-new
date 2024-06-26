@@ -4,7 +4,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 
-def plot_forecasts(historical_data, forecast_data):
+def plot_forecasts(historical_data, test_data, forecast_data):
+    
+    # Determine the start date for the test set
+    test_start_date = test_data['ds'].min()
     
     # Determine the start date for the forecasts
     forecast_start_date = forecast_data['ds'].min()
@@ -12,21 +15,38 @@ def plot_forecasts(historical_data, forecast_data):
     # Create the base line plot for historical data
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=historical_data['ds'], y=historical_data['y'], mode='lines', name='Historical Data',
-                             line=dict(color='red')))
+                             line=dict(color='darkorange')))
+    
+    # Add test data
+    fig.add_trace(go.Scatter(x=test_data['ds'], y=test_data['y_pred'], mode='lines', name='Test',
+                             line=dict(color='firebrick')))
 
     # Add forecast data
     fig.add_trace(go.Scatter(x=forecast_data['ds'], y=forecast_data['y_pred'], mode='lines', name='Forecast',
                              line=dict(color='seagreen')))
+    
+    # Add min and max prediction intervals of test data as dotted lines
+    fig.add_trace(go.Scatter(x=test_data['ds'], y=test_data['min_pred'], mode='lines', name='Min Prediction',
+                             line=dict(color='lightskyblue', dash='dot'), showlegend=False))
+    fig.add_trace(go.Scatter(x=test_data['ds'], y=test_data['max_pred'], mode='lines', name='Max Prediction',
+                             line=dict(color='lightskyblue', dash='dot'), showlegend=False))
 
-    # Add min and max prediction intervals as dotted lines
+    # Add min and max prediction intervals of forecast data as dotted lines
     fig.add_trace(go.Scatter(x=forecast_data['ds'], y=forecast_data['min_pred'], mode='lines', name='Min Prediction',
-                             line=dict(color='blue', dash='dot')))
+                             line=dict(color='royalblue', dash='dot')))
     fig.add_trace(go.Scatter(x=forecast_data['ds'], y=forecast_data['max_pred'], mode='lines', name='Max Prediction',
-                             line=dict(color='blue', dash='dot')))
-
+                             line=dict(color='royalblue', dash='dot')))
     # Add a vertical dotted line to indicate the start of the forecasts
     fig.add_trace(go.Scatter(x=[forecast_start_date, forecast_start_date], y=[min(historical_data['y'].min(), forecast_data['min_pred'].min()), max(historical_data['y'].max(), forecast_data['max_pred'].max())],
                              mode='lines', name='Start of Forecast', line=dict(color='black', dash='dot')))
+    
+    # Add a vertical dotted line to indicate the start of the forecasts
+    fig.add_trace(go.Scatter(x=[test_start_date, test_start_date], y=[min(historical_data['y'].min(), forecast_data['min_pred'].min()), max(historical_data['y'].max(), forecast_data['max_pred'].max())],
+                             mode='lines', name='Test - Start', line=dict(color='black', dash='dash')))
+
+    # Add a vertical dotted line to indicate the start of the forecasts
+    fig.add_trace(go.Scatter(x=[forecast_start_date, forecast_start_date], y=[min(historical_data['y'].min(), forecast_data['min_pred'].min()), max(historical_data['y'].max(), forecast_data['max_pred'].max())],
+                             mode='lines', name='Forecast - Start', line=dict(color='black', dash='dot')))
 
     fig.update_layout(
         autosize=False,
@@ -78,12 +98,12 @@ def create_pivot_table(data, index_unit='month', aggfunc='mean'):
         result = result.reindex(order)
 
     # Calculate percentage change from the previous year
-    result = result.join(result.pct_change(axis='columns') * 100, rsuffix=' % Change')
+    result = result.join(result.pct_change(axis='columns') * 100, rsuffix=' - % Change')
 
     # Clean up infinite and NaN values resulted from zero division or empty previous year data
     result = result.replace([np.inf, -np.inf], np.nan)
     
-    return result
+    return result.dropna(axis=1, how='all')
 
 
 def plot_time_series(data):
@@ -108,7 +128,6 @@ def plot_time_series(data):
     fig.update_layout(legend_title='Year',
                       xaxis=dict(type='category'))  # Ensure categorical handling of x-axis for clarity
     
-
     fig.update_layout(
         autosize=False,
         width=600,

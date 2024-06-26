@@ -99,7 +99,7 @@ if st.session_state.logged_in:
         # uploaded_historical_file = st.file_uploader("Historical Data (.csv) :arrow_up: **(MANDATORY)**", type=["csv"])
         # uploaded_forecast_file = st.file_uploader("Forecast Data (.csv) :arrow_up: **(OPTIONAL)**", type=["csv"])
         
-        uploaded_historical_file = "Agency Services.csv"
+        uploaded_historical_file = "../Agency Services.csv"
         uploaded_forecast_file = None
 
         submitted = st.form_submit_button("Submit")
@@ -428,6 +428,7 @@ if st.session_state.input_submitted:
 
                     # Test Set Evaluation
                     test_eval = {}
+                    test_dict = {}
 
                     for model_name, model_results in search_results.items():
                         if model_results['package_type'] == 'sktime':
@@ -449,6 +450,9 @@ if st.session_state.input_submitted:
                         predictions_df['y_pred'] = predictions_df['y_pred'].apply(lambda x: 1 if x == 0 else x)
 
                         test_eval[model_name] = compute_metrics(predictions_df, train_df["y"])
+                        test_dict[model_name] = predictions_df.copy(deep=True)
+                        
+                    st.session_state.test_dict = test_dict
                      
                     # Convert the list of dictionaries into a DataFrame for easy manipulation
                     metrics_df = pd.DataFrame(test_eval).T
@@ -543,10 +547,11 @@ if st.session_state.input_submitted:
         
         # Extract relevant data from the historical and forecast DataFrames
         historical_data = optimal_df.reset_index()[['ds', 'y']]
+        test_data = st.session_state.test_dict[selected_model][['ds', 'y_pred', 'min_pred', 'max_pred']]
         forecast_data = st.session_state.forecasts_dict[selected_model][['ds', 'y_pred', 'min_pred', 'max_pred']]
         
         # Generate forecast plot
-        fig = plot_forecasts(historical_data, forecast_data)
+        fig = plot_forecasts(historical_data, test_data, forecast_data)
         modelling_tab.plotly_chart(fig, use_container_width=True)
         
         img_fname = "Historical_Forecast_Plot"
@@ -558,8 +563,8 @@ if st.session_state.input_submitted:
         col_1, col_2, col_3, _ = modelling_tab.columns([2, 2, 2, 6])
 
         # Add download buttons for plot and data
-        csv_download_button(col_1, historical_data, "Historical Data")
-        csv_download_button(col_2, forecast_data, "Forecast Data")
+        csv_download_button(col_1, historical_data.merge(test_data, on='ds', how='left'), "Historical Data", 'Export Historical Data (.csv)')
+        csv_download_button(col_2, forecast_data, "Forecast Data", 'Export Forecast Data (.csv)')
         html_download_button(col_3, html_buffer, img_fname)
         
         # Add to excel
