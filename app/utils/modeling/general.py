@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestRegressor
 from xgboost import XGBRegressor
 from sktime.forecasting.fbprophet import Prophet
 from sktime.forecasting.naive import NaiveForecaster
+from sktime.forecasting.exp_smoothing import ExponentialSmoothing
 
 from sktime.performance_metrics.forecasting import (
     mean_absolute_percentage_error,
@@ -109,7 +110,8 @@ def load_model_params_and_create_instance(model_type, current_dir):
         'random_forest': (RandomForestRegressor(), 'random_forest.yaml'),
         'xgboost': (XGBRegressor(), 'xgboost.yaml'),
         'prophet': (Prophet(), 'prophet.yaml'),
-        'naive': (NaiveForecaster(), 'naive.yaml')
+        'naive': (NaiveForecaster(), 'naive.yaml'),
+        'exponential_smoothing': (ExponentialSmoothing(), 'exponential_smoothing.yaml'),
     }
     
     # Ensure the model type is supported
@@ -137,7 +139,7 @@ def compute_metrics(df_predictions: pd.DataFrame, y_hist = None) -> dict:
     """
     
     # Drop NA values from DataFrame
-    df_predictions = df_predictions.dropna()
+    df_predictions = df_predictions.dropna(subset=["y_pred", "y"])
     
     # Compute MAPE and RMSPE
     mape = mean_absolute_percentage_error(df_predictions["y"], df_predictions["y_pred"])

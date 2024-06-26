@@ -1,3 +1,4 @@
+n_changepoints: [10]
 changepoint_prior_scale: [0.01]
 seasonality_prior_scale: [0.1]
 seasonality_mode: ['multiplicative']

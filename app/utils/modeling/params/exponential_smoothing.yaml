@@ -1,0 +1,4 @@
+trend: ['add', 'mul', None]
+damped_trend: [True, False]
+seasonal: ['add', 'mul', None]
+sp: [4, 6, 12]

@@ -3,7 +3,6 @@ import pandas as pd
 from typing import Dict, Tuple, Optional, Union
 from sktime.forecasting.model_selection import ExpandingWindowSplitter, ForecastingGridSearchCV
 from sktime.performance_metrics.forecasting import mean_squared_percentage_error, mean_absolute_percentage_error
-from sktime.forecasting.naive import NaiveForecaster
 
 
 def find_best_model_sktime(y, run_params, model, param_grid):
@@ -15,7 +14,7 @@ def find_best_model_sktime(y, run_params, model, param_grid):
                                  fh=run_params["test_steps"],
                                  step_length=run_params["test_steps"])
 
-    if model != NaiveForecaster():
+    if model.__class__.__name__ == 'Prophet':
     
         # Adjust parameter grid based on country name for holidays
         if run_params["country_name"]:
@@ -61,14 +60,19 @@ def generate_forecast_sktime(best_model, forecast_period):
     # Generate predictions
     forecast_pred = best_model.predict(fh=forecast_horizon).reset_index(drop=False)
     forecast_pred.columns = ["ds", "y_pred"]
+    
+    if best_model.__class__.__name__ != 'ExponentialSmoothing':
 
-    # Generate prediction intervals
-    forecast_pred_int = best_model.predict_interval(fh=forecast_horizon, coverage=0.95).reset_index(drop=False)
-    forecast_pred_int.columns = ["ds", "min_pred", "max_pred"]
+        # Generate prediction intervals
+        forecast_pred_int = best_model.predict_interval(fh=forecast_horizon, coverage=0.95).reset_index(drop=False)
+        forecast_pred_int.columns = ["ds", "min_pred", "max_pred"]
+        
+    else:
+        forecast_pred_int = pd.DataFrame(columns=["ds", "min_pred", "max_pred"])
 
     # Combine predictions and intervals, add the date range
-    forecast_results = forecast_pred.merge(forecast_pred_int, on="ds")
-    
+    forecast_results = forecast_pred.merge(forecast_pred_int, on="ds", how='left')
+
     # Ensure the lengths are equal
     assert len(forecast_results) == forecast_period, "Error: Length mismatch!"
     

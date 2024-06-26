@@ -169,7 +169,6 @@ if st.session_state.input_submitted:
 
         # Retrieve current timestamp
         dt_now = datetime.now().strftime('%d-%m-%Y-%H-%M-%S')
-        
 
         # Set up tabs for modelling, analysis, and download results
         modelling_tab, analysis_tab, download_tab = st.tabs(["Modelling :bar_chart:", 
@@ -323,7 +322,7 @@ if st.session_state.input_submitted:
             'To': [run_params["historical_end_date"].strftime('%d-%m-%Y'), run_params["optimal_end_date"].strftime('%d-%m-%Y'), run_params["forecast_end_date"].strftime('%d-%m-%Y')]
         })
 
-        modelling_tab.dataframe(dates_df)
+        modelling_tab.dataframe(dates_df.set_index('Type'), use_container_width=True)
 
         modelling_tab.markdown(f'**Exogenous Features**: :blue[{", ".join(run_params["exog_cols_all"])}]')
         
@@ -352,6 +351,10 @@ if st.session_state.input_submitted:
                 'Naive': {
                     'fname': 'naive',
                     'package_type': 'sktime'
+                },
+                'Exponential Smoothing': {
+                        'fname': 'exponential_smoothing',
+                        'package_type': 'sktime'
                 },
                 'Random Forest': {
                     'fname': 'random_forest',
@@ -512,6 +515,7 @@ if st.session_state.input_submitted:
         
         # Load test ste evaluation metrics
         metrics_df = st.session_state.metrics_df
+        metrics_df = metrics_df[['Model', 'MASE', 'RMSSE', 'Coverage', 'MAPE', 'RMSPE']]
 
         # Apply the background gradient to the metrics columns except 'Coverage'
         metrics_df = metrics_df.style.background_gradient(
@@ -524,7 +528,7 @@ if st.session_state.input_submitted:
         )
         
         # Show Test Set Metrics
-        modelling_tab.dataframe(metrics_df)
+        modelling_tab.dataframe(metrics_df, use_container_width=True)
         
         col_1, _ = modelling_tab.columns([2, 10])
 
@@ -538,12 +542,15 @@ if st.session_state.input_submitted:
         
         #####################################################################################
         
-        modelling_tab.subheader("Forecasts Generated :chart_with_upwards_trend:")
+        modelling_tab.subheader("Forecasts Generated :crystal_ball:")
         
         col_1, _ = modelling_tab.columns([2, 10])
         
         # Choose Model Type
         selected_model = col_1.selectbox("Choose Model Type :brain:", st.session_state.metrics_df['Model'].tolist(), key="model_dropdown")
+        
+        if selected_model == "Exponential Smoothing":
+            modelling_tab.warning('Disclaimer: Unable to generate the prediction intervals due to the limitations of the selected model.')
         
         # Extract relevant data from the historical and forecast DataFrames
         historical_data = optimal_df.reset_index()[['ds', 'y']]
