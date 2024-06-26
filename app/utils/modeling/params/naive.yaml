@@ -1,2 +1,2 @@
-strategy: ['mean']
-window_length: [7]
+strategy: ['mean', 'drift']
+window_length: [7, 10, 14, 21, 28, 35, 42, 49, 56, 63, 70]
